@@ -55,7 +55,41 @@ body {
     overflow: hidden;
     border: 1px solid var(--border-color);
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.9);
-    user-select: none;
+    /* Big Centered Play Button Overlay */
+.big-play-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 76px;
+    height: 76px;
+    border-radius: 50%;
+    background: rgba(56, 189, 248, 0.9);
+    backdrop-filter: blur(12px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+    font-size: 28px;
+    cursor: pointer;
+    z-index: 25;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+    -webkit-tap-highlight-color: transparent !important;
+}
+
+.big-play-overlay i {
+    margin-left: 4px;
+}
+
+.big-play-overlay:hover {
+    transform: translate(-50%, -50%) scale(1.12);
+    background: #0284c7;
+}
+
+.big-play-overlay.hidden {
+    display: none !important;
+}
 }
 
 .player-container.fullscreen {
