@@ -204,10 +204,41 @@ async function resolveAndPlay() {
             }
         }
 
-        if (data.backdrop_path || data.poster_path) {
-            // Keep poster attribute empty to avoid blocking HTML5 video rendering
-            videoPlayer.removeAttribute('poster');
-            playerContainer.style.backgroundImage = 'none';
+        // Show TMDB backdrop/poster as thumbnail before playback
+        const thumbUrl = data.backdrop_path
+            ? `https://image.tmdb.org/t/p/w1280${data.backdrop_path}`
+            : data.poster_path
+            ? `https://image.tmdb.org/t/p/w780${data.poster_path}`
+            : null;
+
+        const existingThumb = document.getElementById('thumbnail-overlay');
+        if (existingThumb) existingThumb.remove();
+
+        if (thumbUrl) {
+            const thumbDiv = document.createElement('div');
+            thumbDiv.id = 'thumbnail-overlay';
+            thumbDiv.style.cssText = `
+                position:absolute; inset:0; z-index:5;
+                background: url('${thumbUrl}') center/cover no-repeat;
+                transition: opacity 0.5s ease;
+                cursor: pointer;
+            `;
+            // Big play icon on top of thumbnail
+            thumbDiv.innerHTML = `<div style="
+                position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+                background: rgba(0,0,0,0.3);
+            "><div style="
+                width:72px; height:72px; border-radius:50%;
+                background: rgba(255,255,255,0.15); backdrop-filter:blur(8px);
+                border:2px solid rgba(255,255,255,0.4);
+                display:flex; align-items:center; justify-content:center;
+                font-size:28px; color:#fff; padding-left:5px;
+            ">▶</div></div>`;
+            thumbDiv.addEventListener('click', () => {
+                thumbDiv.style.opacity = '0';
+                setTimeout(() => thumbDiv.remove(), 500);
+            });
+            playerContainer.appendChild(thumbDiv);
         }
 
         restoreCustomPlayer();
@@ -328,6 +359,12 @@ function playSource(streamUrl, sourceIndex = 0) {
 
         hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
             logConsole("HLS Manifest Parsed.");
+            // Remove thumbnail overlay now that video is ready
+            const thumb = document.getElementById('thumbnail-overlay');
+            if (thumb) {
+                thumb.style.opacity = '0';
+                setTimeout(() => thumb.remove(), 500);
+            }
             if (startTimeInSeconds > 0) {
                 videoPlayer.currentTime = startTimeInSeconds;
                 startTimeInSeconds = 0;
@@ -658,8 +695,13 @@ function showControls() {
     }
 }
 
+// VIDEO CLICK: toggle controls visibility (hide/show)
+// Play/pause is handled by the play button & spacebar
 if (videoPlayer) {
-    videoPlayer.addEventListener('click', togglePlay);
+    videoPlayer.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleControls();
+    });
 }
 
 playerContainer.addEventListener('mousemove', showControls);
