@@ -125,7 +125,7 @@ def decrypt_videasy_payload(enc_b64, media_id_str, seed_str):
 # SERVER STREAM RESOLVER FUNCTION
 # In-Memory Stream Cache for 0.001s Instant Load
 RESOLVE_CACHE = {}
-CACHE_TTL_SECONDS = 3600
+CACHE_TTL_SECONDS = 60
 
 # -------------------------------------------------------------
 # INSTANT PARALLEL STREAM RESOLVER WITH MEMORY CACHING
