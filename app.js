@@ -258,6 +258,9 @@ function playSource(streamUrl, sourceIndex = 0) {
 
     if (Hls.isSupported()) {
         if (hlsInstance) hlsInstance.destroy();
+
+        const isWorkersDev = streamUrl.includes('workers.dev');
+
         hlsInstance = new Hls({
             enableWorker: true,
             lowLatencyMode: false,
@@ -265,9 +268,12 @@ function playSource(streamUrl, sourceIndex = 0) {
             maxBufferLength: 30,
             maxMaxBufferLength: 60,
             maxBufferSize: 60 * 1024 * 1024,
-            manifestLoadingTimeOut: 20000,
-            fragLoadingTimeOut: 20000,
-            levelLoadingTimeOut: 20000
+            manifestLoadingTimeOut: 25000,
+            fragLoadingTimeOut: 25000,
+            levelLoadingTimeOut: 25000,
+            xhrSetup: function(xhr) {
+                xhr.withCredentials = false;
+            }
         });
 
         hlsInstance.loadSource(streamUrl);
@@ -364,8 +370,29 @@ function playSource(streamUrl, sourceIndex = 0) {
 
         // Error Fallback
         let triedProxy = false;
+        let directRetries = 0;
         hlsInstance.on(Hls.Events.ERROR, (evt, data) => {
             if (data.fatal) {
+                // workers.dev URLs: never proxy (Cloudflare blocks server-side)
+                // Instead, retry direct URL up to 2x, then try next source
+                if (isWorkersDev) {
+                    if (directRetries < 2) {
+                        directRetries++;
+                        logConsole(`workers.dev retry ${directRetries}: reloading direct...`);
+                        setTimeout(() => {
+                            hlsInstance.loadSource(streamUrl);
+                        }, 1500 * directRetries);
+                    } else if (currentSourceIndex + 1 < activeSources.length) {
+                        playSource(activeSources[currentSourceIndex + 1].url, currentSourceIndex + 1);
+                    } else {
+                        // Last resort: re-resolve fresh stream URL
+                        logConsole('All retries exhausted, re-resolving stream...');
+                        resolveAndPlay();
+                    }
+                    return;
+                }
+
+                // Normal CDN URLs: try proxy fallback first
                 if (!triedProxy && streamUrl && !streamUrl.includes('/api/m3u8-proxy')) {
                     triedProxy = true;
                     const proxiedUrl = `/api/m3u8-proxy?url=${encodeURIComponent(streamUrl)}`;
