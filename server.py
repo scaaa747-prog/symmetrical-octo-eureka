@@ -176,40 +176,62 @@ def resolve_streams(tmdb_id, media_type="movie", season="1", episode="1"):
     ]
 
     def fetch_endpoint_sources(ep):
-        try:
-            seed_url = f"https://api.speedracelight.com/seed?mediaId={tmdb_id}&_t={int(time.time()*1000)}"
-            req_seed = urllib.request.Request(seed_url, headers=headers)
-            with urllib.request.urlopen(req_seed, timeout=4) as resp:
-                ep_seed = json.loads(resp.read().decode('utf-8')).get('seed')
+        for attempt in range(3):
+            try:
+                seed_url = f"https://api.speedracelight.com/seed?mediaId={tmdb_id}&_t={int(time.time()*1000)}"
+                req_seed = urllib.request.Request(seed_url, headers=headers)
+                with urllib.request.urlopen(req_seed, timeout=4) as resp:
+                    ep_seed = json.loads(resp.read().decode('utf-8')).get('seed')
 
-            params = {
-                'title': title,
-                'mediaType': media_type,
-                'year': year,
-                'tmdbId': tmdb_id,
-                'imdbId': imdb_id,
-                'enc': '2',
-                'seed': ep_seed
-            }
-            if media_type == 'tv':
-                params['seasonId'] = season
-                params['episodeId'] = episode
+                if not ep_seed:
+                    continue
 
-            query_str = urllib.parse.urlencode(params)
-            target_url = f"{ep}?{query_str}"
-            
-            req_ep = urllib.request.Request(target_url, headers=headers)
-            with urllib.request.urlopen(req_ep, timeout=6) as resp:
-                enc_body = resp.read().decode('utf-8')
-                decrypted_str = decrypt_videasy_payload(enc_body, str(tmdb_id), ep_seed)
-                parsed = json.loads(decrypted_str)
-                return parsed.get('sources', [])
-        except Exception:
-            return []
+                params = {
+                    'title': title,
+                    'mediaType': media_type,
+                    'year': year,
+                    'tmdbId': tmdb_id,
+                    'imdbId': imdb_id,
+                    'enc': '2',
+                    'seed': ep_seed
+                }
+                if media_type == 'tv':
+                    params['seasonId'] = season
+                    params['episodeId'] = episode
 
-    all_sources = fetch_endpoint_sources("https://api.speedracelight.com/hdmovie/sources-with-title")
-    if not all_sources:
-        all_sources = fetch_endpoint_sources("https://api.speedracelight.com/meine/sources-with-title")
+                query_str = urllib.parse.urlencode(params)
+                target_url = f"{ep}?{query_str}"
+                
+                req_ep = urllib.request.Request(target_url, headers=headers)
+                with urllib.request.urlopen(req_ep, timeout=6) as resp:
+                    enc_body = resp.read().decode('utf-8')
+                    decrypted_str = decrypt_videasy_payload(enc_body, str(tmdb_id), ep_seed)
+                    parsed = json.loads(decrypted_str)
+                    srcs = parsed.get('sources', [])
+                    if srcs:
+                        return srcs
+            except Exception:
+                pass
+            time.sleep(0.3)
+        return []
+
+    all_sources = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        f_hd = executor.submit(fetch_endpoint_sources, "https://api.speedracelight.com/hdmovie/sources-with-title")
+        f_meine = executor.submit(fetch_endpoint_sources, "https://api.speedracelight.com/meine/sources-with-title")
+        
+        hd_srcs = f_hd.result() or []
+        meine_srcs = f_meine.result() or []
+
+        if hd_srcs:
+            all_sources.extend(hd_srcs)
+        if meine_srcs:
+            for s in meine_srcs:
+                if s.get('url') and not any(x['url'] == s['url'] for x in all_sources):
+                    all_sources.append(s)
+
+    # Filter out broken Cloudflare workers.dev streams
+    all_sources = [s for s in all_sources if 'workers.dev' not in s.get('url', '')]
 
     res_data = {
         'success': True,
@@ -377,12 +399,12 @@ def proxy_m3u8(m3u8_url, handler):
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': '*/*',
         'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'identity',
         'Origin': 'https://player.videasy.to',
         'Referer': 'https://player.videasy.to/',
         'Sec-Fetch-Dest': 'empty',
         'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'cross-site',
-        'X-Forwarded-For': client_ip
+        'Sec-Fetch-Site': 'cross-site'
     }
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
@@ -432,10 +454,10 @@ def proxy_m3u8(m3u8_url, handler):
                     handler.wfile.write(body)
                 return
         except Exception:
-            if attempt == 1:
-                handler.send_response(500)
-                handler.send_header('Access-Control-Allow-Origin', '*')
-                handler.end_headers()
+            handler.send_response(302)
+            handler.send_header('Location', m3u8_url)
+            handler.send_header('Access-Control-Allow-Origin', '*')
+            handler.end_headers()
 
 # -------------------------------------------------------------
 # THREADED HTTP SERVER CLASS (PREVENTS BLOCKING)

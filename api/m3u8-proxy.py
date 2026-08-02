@@ -20,12 +20,12 @@ except Exception:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': '*/*',
             'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'identity',
             'Origin': 'https://player.videasy.to',
             'Referer': 'https://player.videasy.to/',
             'Sec-Fetch-Dest': 'empty',
             'Sec-Fetch-Mode': 'cors',
-            'Sec-Fetch-Site': 'cross-site',
-            'X-Forwarded-For': client_ip
+            'Sec-Fetch-Site': 'cross-site'
         }
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
@@ -73,10 +73,10 @@ except Exception:
                         handler.wfile.write(body)
                     return
             except Exception:
-                if attempt == 1:
-                    handler.send_response(500)
-                    handler.send_header('Access-Control-Allow-Origin', '*')
-                    handler.end_headers()
+                handler.send_response(302)
+                handler.send_header('Location', m3u8_url)
+                handler.send_header('Access-Control-Allow-Origin', '*')
+                handler.end_headers()
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
