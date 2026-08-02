@@ -253,7 +253,8 @@ function restoreCustomPlayer() {
 // -------------------------------------------------------------
 function playSource(streamUrl, sourceIndex = 0) {
     currentSourceIndex = sourceIndex;
-    logConsole(`Playing source index ${sourceIndex}: ${streamUrl}`);
+    const proxiedUrl = `/api/m3u8-proxy?url=${encodeURIComponent(streamUrl)}`;
+    logConsole(`Playing source index ${sourceIndex}: ${proxiedUrl}`);
 
     qualitySelect.innerHTML = '<option value="-1">Auto Quality</option>';
     subtitleSelect.innerHTML = '<option value="-1">Subtitles Off</option>';
@@ -272,7 +273,7 @@ function playSource(streamUrl, sourceIndex = 0) {
             levelLoadingTimeOut: 20000
         });
 
-        hlsInstance.loadSource(streamUrl);
+        hlsInstance.loadSource(proxiedUrl);
         hlsInstance.attachMedia(videoPlayer);
 
         function populateQualityLevels() {

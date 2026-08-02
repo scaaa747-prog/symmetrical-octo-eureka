@@ -207,21 +207,9 @@ def resolve_streams(tmdb_id, media_type="movie", season="1", episode="1"):
         except Exception:
             return []
 
-    # Fetch All Endpoints in Parallel - Fast Return on first valid response!
-    all_sources = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-        endpoint_futures = [executor.submit(fetch_endpoint_sources, ep) for ep in endpoints]
-        for f in concurrent.futures.as_completed(endpoint_futures):
-            try:
-                srcs = f.result()
-                if srcs:
-                    for src in srcs:
-                        if src.get('url') and not any(s['url'] == src['url'] for s in all_sources):
-                            all_sources.append(src)
-                    if all_sources:
-                        break
-            except Exception:
-                pass
+    all_sources = fetch_endpoint_sources("https://api.speedracelight.com/hdmovie/sources-with-title")
+    if not all_sources:
+        all_sources = fetch_endpoint_sources("https://api.speedracelight.com/meine/sources-with-title")
 
     res_data = {
         'success': True,
