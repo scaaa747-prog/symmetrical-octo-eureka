@@ -283,7 +283,9 @@ function playSource(streamUrl, sourceIndex = 0) {
     currentSourceIndex = sourceIndex;
     logConsole(`Playing source index ${sourceIndex}: ${streamUrl}`);
 
-    qualitySelect.innerHTML = '<option value="-1">Auto Quality</option>';
+    if (!activeSources || activeSources.length === 0) {
+        qualitySelect.innerHTML = '<option value="-1">Auto Quality</option>';
+    }
     audioSelect.innerHTML = '<option value="-1">Default Audio</option>';
     subtitleSelect.innerHTML = '<option value="-1">Subtitles Off</option>';
 
@@ -361,6 +363,7 @@ function playSource(streamUrl, sourceIndex = 0) {
         hlsInstance.attachMedia(videoPlayer);
 
         function populateQualityLevels() {
+            if (activeSources && activeSources.length > 1) return;
             if (!hlsInstance || !hlsInstance.levels || hlsInstance.levels.length === 0) return;
 
             const levels = hlsInstance.levels;
