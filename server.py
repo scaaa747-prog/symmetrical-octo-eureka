@@ -100,17 +100,10 @@ def get_keystream(seed_str, tmdb_str, length):
 
 def decrypt_videasy_payload(b64_str, tmdb_id, seed):
     try:
-        raw_b64 = b64_str.replace('-', '+').replace('_', '/')
-        raw_b64 += '=' * ((4 - len(raw_b64) % 4) % 4)
-        enc_bytes = bytearray(base64.b64decode(raw_b64))
-        
-        ks = get_keystream(str(seed), str(tmdb_id), len(enc_bytes))
-        dec = bytearray(len(enc_bytes))
-        for idx in range(len(enc_bytes)):
-            dec[idx] = enc_bytes[idx] ^ ks[idx]
-            
-        if list(dec[:4]) == HEADER_SIG:
-            return dec[4:].decode('utf-8')
+        cmd = ['node', '/root/videasy_node_decrypt.cjs', b64_str, str(seed), str(tmdb_id)]
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        if res.returncode == 0 and res.stdout.strip():
+            return res.stdout.strip()
     except Exception:
         pass
     return "{}"
