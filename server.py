@@ -24,94 +24,7 @@ def b_func(e): return ((e * (e + 1)) & 1) == 0
 def i_func(e): return ((e * (e + 1)) & 1) == 1
 def uint32(x): return x & 0xFFFFFFFF
 
-def v_func(e):
-    e = uint32(e)
-    e ^= (e >> 16)
-    e = uint32((e * 2246822507) & 0xFFFFFFFF)
-    e ^= (e >> 13)
-    e = uint32((e * 3266489909) & 0xFFFFFFFF)
-    return uint32(e ^ (e >> 16))
 
-def w_func(e, t):
-    e = uint32(e)
-    t = t & 31
-    if t == 0: return uint32(e)
-    return uint32((e << t) | (e >> (32 - t)))
-
-def generate_prng(seed_str, media_id_str, total_len):
-    def init_state(e, t):
-        if i_func(len(e)):
-            S = {}
-            for i in range(256): S[i] = i
-            s_val = 0
-            for a in range(256):
-                s_val = (s_val + S[a] + ord(e[a % len(e)])) & 255
-                S[a], S[s_val] = S[s_val], S[a]
-            
-            t_acc = 1732584193
-            for idx in range(len(e)):
-                prod = uint32(ord(e[idx]) * PRNG_F[15 & idx])
-                t_acc = w_func(t_acc ^ prod, 5)
-            return {'S': S, 'acc': v_func(t_acc)}
-
-        s_dict = {}
-        val_e = 2166136261
-        for char in e:
-            val_e = uint32((val_e ^ ord(char)) * 16777619)
-        hash_e = v_func(val_e)
-
-        try: t_int = int(t) & 0xFFFFFFFF
-        except: t_int = 0
-        hash_t = v_func(t_int ^ 2654435769)
-        a_acc = v_func(hash_e ^ hash_t)
-
-        for step in range(8):
-            if b_func(step):
-                t_idx = a_acc % 61
-                a_acc = w_func(uint32(a_acc + 2654435769), 7 + (7 & step))
-                s_dict[t_idx] = uint32(a_acc ^ v_func(a_acc))
-                a_acc = v_func(uint32(a_acc + t_idx))
-            else:
-                s_dict[step] = PRNG_F[15 & step]
-        return {'S': s_dict, 'acc': v_func(2779096485 ^ a_acc)}
-
-    state = init_state(seed_str, media_id_str)
-    res = bytearray(total_len)
-    o_idx = 0
-    e_ptr = 0
-
-    while e_ptr < total_len:
-        r_S = state['S']
-        o_acc = state['acc']
-        n_mod = o_acc % 61
-        i_flag = -1 if (n_mod in r_S) else 0
-        l_val = uint32(r_S.get(n_mod, 0))
-
-        term = uint32((l_val ^ uint32(2654435769 * (o_idx + 1))))
-        d_val = uint32((o_acc ^ term) | (o_acc & term & i_flag))
-        
-        step1 = w_func(uint32(d_val + o_acc), 31 & n_mod)
-        step2 = w_func(o_acc, 31 & uint32(n_mod * 7))
-        d_next = uint32(step1 ^ step2)
-
-        o_acc = v_func(uint32(d_next + 2654435769))
-        r_S[n_mod] = o_acc
-        state['acc'] = o_acc
-        o_idx += 1
-        t_gen = o_acc
-
-        res[e_ptr] = t_gen & 255; e_ptr += 1
-        if e_ptr < total_len: res[e_ptr] = (t_gen >> 8) & 255; e_ptr += 1
-        if e_ptr < total_len: res[e_ptr] = (t_gen >> 16) & 255; e_ptr += 1
-        if e_ptr < total_len: res[e_ptr] = (t_gen >> 24) & 255; e_ptr += 1
-
-    return res
-
-def decrypt_videasy_payload(enc_b64, media_id_str, seed_str):
-    raw_b64 = enc_b64.replace('-', '+').replace('_', '/')
-    raw_b64 += '=' * ((4 - len(raw_b64) % 4) % 4)
-    enc_bytes = bytearray(base64.b64decode(raw_b64))
-    return uint32(e)
 
 def parse_iv(t, n):
     r = t
@@ -211,14 +124,18 @@ def resolve_streams(tmdb_id, media_type="movie", season="1", episode="1"):
             return {}
 
     def fetch_seed_once():
-        """Fetch seed ONE TIME — only needed to decrypt the stream URL, not stored."""
-        try:
-            seed_url = f"https://api.speedracelight.com/seed?mediaId={tmdb_id}"
-            req = urllib.request.Request(seed_url, headers=headers)
-            with urllib.request.urlopen(req, timeout=4) as resp:
-                return json.loads(resp.read().decode('utf-8')).get('seed')
-        except Exception:
-            return None
+        """Fetch seed with retry logic to handle temporary Cloudflare 429 limits."""
+        for attempt in range(3):
+            try:
+                seed_url = f"https://api.speedracelight.com/seed?mediaId={tmdb_id}&_t={int(time.time()*1000)}"
+                req = urllib.request.Request(seed_url, headers=headers)
+                with urllib.request.urlopen(req, timeout=4) as resp:
+                    s = json.loads(resp.read().decode('utf-8')).get('seed')
+                    if s: return s
+            except Exception:
+                if attempt < 2:
+                    time.sleep(0.4 * (attempt + 1))
+        return None
 
     # Fetch meta + seed in parallel — one shot
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
