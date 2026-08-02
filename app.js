@@ -245,7 +245,7 @@ async function resolveAndPlay() {
         activeSources = data.sources;
         currentSourceIndex = 0;
         
-        updateAudioDropdown(activeSources);
+        updateQualityDropdown(activeSources);
         playSource(activeSources[0].url, 0);
 
         playerLoading.classList.add('hidden');
@@ -527,23 +527,24 @@ function playSource(streamUrl, sourceIndex = 0) {
 }
 
 // -------------------------------------------------------------
-// AUDIO DROPDOWN POPULATOR
+// QUALITY DROPDOWN POPULATOR
 // -------------------------------------------------------------
-function updateAudioDropdown(sources) {
-    audioSelect.innerHTML = '';
+function updateQualityDropdown(sources) {
+    if (!qualitySelect) return;
+    qualitySelect.innerHTML = '';
 
     if (!sources || sources.length === 0) {
-        audioSelect.innerHTML = '<option value="src:0">Default Audio</option>';
+        qualitySelect.innerHTML = '<option value="-1">Auto Quality</option>';
         return;
     }
 
     sources.forEach((src, idx) => {
         const opt = document.createElement('option');
         opt.value = `src:${idx}`;
-        const langName = src.quality ? src.quality.trim() : `Audio ${idx + 1}`;
-        opt.innerText = langName.toLowerCase().includes('audio') ? langName : `${langName} Audio`;
+        const qLabel = src.quality ? src.quality.trim() : `Quality ${idx + 1}`;
+        opt.innerText = qLabel;
         if (idx === currentSourceIndex) opt.selected = true;
-        audioSelect.appendChild(opt);
+        qualitySelect.appendChild(opt);
     });
 }
 
@@ -653,14 +654,20 @@ function updateVolumeIcon() {
 }
 
 // Quality & Audio Selectors
-function changeQuality(idx) {
-    if (hlsInstance) hlsInstance.currentLevel = parseInt(idx);
+function changeQuality(val) {
+    if (typeof val === 'string' && val.startsWith('src:')) {
+        const idx = parseInt(val.split(':')[1]);
+        if (activeSources && activeSources[idx]) {
+            playSource(activeSources[idx].url, idx);
+        }
+    } else if (hlsInstance) {
+        hlsInstance.currentLevel = parseInt(val);
+    }
 }
 
 function changeAudioTrack(val) {
-    if (val.startsWith('src:')) {
-        const idx = parseInt(val.split(':')[1]);
-        if (activeSources[idx]) playSource(activeSources[idx].url, idx);
+    if (hlsInstance) {
+        hlsInstance.audioTrack = parseInt(val);
     }
 }
 
