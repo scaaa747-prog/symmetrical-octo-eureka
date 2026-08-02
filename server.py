@@ -444,10 +444,10 @@ def proxy_m3u8(m3u8_url, handler):
                 handler.end_headers()
                 handler.wfile.write(body)
     except Exception as e:
-        handler.send_response(500)
+        handler.send_response(302)
+        handler.send_header('Location', m3u8_url)
         handler.send_header('Access-Control-Allow-Origin', '*')
         handler.end_headers()
-        handler.wfile.write(str(e).encode('utf-8'))
 
 # -------------------------------------------------------------
 # THREADED HTTP SERVER CLASS (PREVENTS BLOCKING)
