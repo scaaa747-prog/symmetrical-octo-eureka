@@ -432,18 +432,10 @@ function togglePlay() {
 
 function updatePlayPauseState() {
     const isPaused = videoPlayer.paused;
-    const bigPlayOverlay = document.getElementById('big-play-overlay');
-
     if (playPauseBtn) {
         playPauseBtn.innerHTML = isPaused ? '<i class="fa-solid fa-play"></i>' : '<i class="fa-solid fa-pause"></i>';
     }
-    if (bigPlayOverlay) {
-        bigPlayOverlay.classList.toggle('hidden', !isPaused);
-    }
-    
-    if (isPaused) {
-        showControls();
-    }
+    showControls();
 }
 
 videoPlayer.addEventListener('play', updatePlayPauseState);
@@ -643,10 +635,7 @@ function showControls() {
 }
 
 if (videoPlayer) {
-    videoPlayer.addEventListener('click', (e) => {
-        e.stopPropagation();
-        toggleControls();
-    });
+    videoPlayer.addEventListener('click', togglePlay);
 }
 
 playerContainer.addEventListener('mousemove', showControls);
