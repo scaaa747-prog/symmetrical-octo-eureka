@@ -8,6 +8,7 @@
   ],
   "routes": [
     { "src": "/api/(.*)", "dest": "/api/index.py" },
+    { "src": "/dwn/(.*)", "dest": "/api/index.py" },
     { "src": "/movie/(.*)", "dest": "/index.html" },
     { "src": "/tv/(.*)", "dest": "/index.html" },
     { "src": "/(.*)", "dest": "/$1" }
