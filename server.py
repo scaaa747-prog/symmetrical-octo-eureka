@@ -20,70 +20,100 @@ PORT = 3000
 PRNG_F = [1116352408, 1899447441, 3049323471, 3921009573, 961987163, 1508970993, 2453635748, 2870763221, 3624381080, 310598401, 607225278, 1426881987, 1925078388, 2162078206, 2614888103, 3248222580]
 HEADER_SIG = [109, 118, 109, 49]
 
+def uint32(x): return x & 0xFFFFFFFF
+def imul(a, b): return uint32((uint32(a) * uint32(b)))
+
 def b_func(e): return ((e * (e + 1)) & 1) == 0
 def i_func(e): return ((e * (e + 1)) & 1) == 1
-def uint32(x): return x & 0xFFFFFFFF
 
-def v_func(e):
+def w_func(e):
     e = uint32(e)
     e ^= (e >> 16)
-    e = uint32((e * 2246822507) & 0xFFFFFFFF)
+    e = imul(e, 2246822507)
     e ^= (e >> 13)
-    e = uint32((e * 3266489909) & 0xFFFFFFFF)
+    e = imul(e, 3266489909)
     return uint32(e ^ (e >> 16))
 
+def v_func(e, t):
+    e = uint32(e)
+    t = t & 31
+    if t == 0: return e
+    return uint32((e << t) | (e >> (32 - t)))
 
+def get_keystream(seed_str, tmdb_str, length):
+    if i_func(len(seed_str)):
+        S = list(range(256))
+        s = 0
+        for a in range(256):
+            s = (s + S[a] + ord(seed_str[a % len(seed_str)])) & 255
+            S[a], S[s] = S[s], S[a]
+        t = 1732584193
+        for idx in range(len(seed_str)):
+            t = v_func(uint32(t ^ imul(ord(seed_str[idx]), PRNG_F[15 & idx])), 5)
+        acc = w_func(t)
+        state = {'S': S, 'acc': acc}
+    else:
+        S = [0] * 61
+        t = 2166136261
+        for idx in range(len(seed_str)):
+            t = imul(t ^ ord(seed_str[idx]), 16777619)
+        hash_t = w_func(t)
+        try: tmdb_val = int(tmdb_str)
+        except Exception: tmdb_val = 0
+        a = w_func(hash_t ^ w_func(uint32(tmdb_val) ^ 2654435769))
+        for e in range(8):
+            if b_func(e):
+                t_val = a % 61
+                a = v_func(uint32(a + 2654435769), 7 + (7 & e))
+                S[t_val] = uint32(a ^ w_func(a))
+                a = w_func(uint32(a + t_val))
+            else: S[e] = PRNG_F[15 & e]
+        acc = w_func(2779096485 ^ a)
+        state = {'S': S, 'acc': acc}
 
-def parse_iv(t, n):
-    r = t
-    for s in range(32):
-        if i_func(n): r = uint32((r << 1) ^ (r >> 31))
-        else: r = uint32((r >> 1) ^ (r << 31))
-        r ^= PRNG_F[(n + s) & 15]
-        r = v_func(r)
-    return uint32(r)
+    out = bytearray(length)
+    o = 0
+    e_idx = 0
+    while e_idx < length:
+        r_state = state['S']
+        acc = state['acc']
+        n = acc % 61
+        d = uint32(r_state[n]) if n < len(r_state) else 0
+        s_val = o
+        a_val = uint32(d ^ imul(2654435769, o + 1))
+        i_val = 1
+        l_val = uint32((s_val ^ a_val) | (s_val & a_val & i_val))
+        
+        l_comb = v_func(uint32(l_val + o), 31 & n) ^ v_func(o, 31 & imul(n, 7))
+        new_acc = w_func(uint32(l_comb + 2654435769))
+        
+        if n < len(r_state): r_state[n] = new_acc
+        state['acc'] = new_acc
+        o += 1
+        
+        out[e_idx] = new_acc & 255
+        e_idx += 1
+        if e_idx < length: out[e_idx] = (new_acc >> 8) & 255; e_idx += 1
+        if e_idx < length: out[e_idx] = (new_acc >> 16) & 255; e_idx += 1
+        if e_idx < length: out[e_idx] = (new_acc >> 24) & 255; e_idx += 1
+    return out
 
-def generate_key(e):
-    t = uint32(e ^ 1116352408)
-    n = uint32(e ^ 1899447441)
-    r = uint32(e ^ 3049323471)
-    o = uint32(e ^ 3921009573)
-    s = []
-    for i in range(16):
-        t = parse_iv(t, i)
-        n = parse_iv(n, i + 1)
-        r = parse_iv(r, i + 2)
-        o = parse_iv(o, i + 3)
-        l = uint32(t ^ n ^ r ^ o)
-        s.extend([(l >> 24) & 255, (l >> 16) & 255, (l >> 8) & 255, l & 255])
-    return s
-
-def decrypt_videasy_payload(enc_str, tmdb_id, seed):
-    enc_bytes = base64.b64decode(enc_str)
-    if list(enc_bytes[:4]) != HEADER_SIG:
-        raise Exception("Invalid Videasy payload header")
-
-    seed_full = str(tmdb_id) + str(seed)
-    seed_sum = sum(ord(c) for c in seed_full)
-    key = generate_key(seed_sum)
-
-    dec_bytes = bytearray(len(enc_bytes) - 4)
-    for i in range(4, len(enc_bytes)):
-        dec_bytes[i - 4] = enc_bytes[i] ^ key[(i - 4) % 64]
-
-    dec_str = dec_bytes.decode('utf-8')
-    sig_len = dec_str.find(':')
-    if sig_len == -1:
-        raise Exception("No signature separator found")
-    
-    sig = dec_str[:sig_len]
-    raw_payload = dec_str[sig_len+1:]
-    
-    expected_sum = sum(ord(c) for c in raw_payload)
-    if int(sig) != expected_sum:
-        raise Exception("Payload signature mismatch")
-
-    return raw_payload
+def decrypt_videasy_payload(b64_str, tmdb_id, seed):
+    try:
+        raw_b64 = b64_str.replace('-', '+').replace('_', '/')
+        raw_b64 += '=' * ((4 - len(raw_b64) % 4) % 4)
+        enc_bytes = bytearray(base64.b64decode(raw_b64))
+        
+        ks = get_keystream(str(seed), str(tmdb_id), len(enc_bytes))
+        dec = bytearray(len(enc_bytes))
+        for idx in range(len(enc_bytes)):
+            dec[idx] = enc_bytes[idx] ^ ks[idx]
+            
+        if list(dec[:4]) == HEADER_SIG:
+            return dec[4:].decode('utf-8')
+    except Exception:
+        pass
+    return "{}"
 
 # -------------------------------------------------------------
 # SERVER STREAM RESOLVER FUNCTION
