@@ -205,12 +205,9 @@ async function resolveAndPlay() {
         }
 
         if (data.backdrop_path || data.poster_path) {
-            const imgPath = data.backdrop_path || data.poster_path;
-            const fullPosterUrl = `https://image.tmdb.org/t/p/w1280${imgPath}`;
-            videoPlayer.setAttribute('poster', fullPosterUrl);
-            playerContainer.style.backgroundImage = `linear-gradient(rgba(0,0,0,0.4), rgba(0,0,0,0.8)), url('${fullPosterUrl}')`;
-            playerContainer.style.backgroundSize = 'cover';
-            playerContainer.style.backgroundPosition = 'center';
+            // Keep poster attribute empty to avoid blocking HTML5 video rendering
+            videoPlayer.removeAttribute('poster');
+            playerContainer.style.backgroundImage = 'none';
         }
 
         restoreCustomPlayer();
@@ -249,12 +246,12 @@ function restoreCustomPlayer() {
 
 
 // -------------------------------------------------------------
-// PLAY HLS STREAM VIA CORS PROXY
+// PLAY HLS STREAM VIA DIRECT CDN WITH PROXY FALLBACK
 // -------------------------------------------------------------
 function playSource(streamUrl, sourceIndex = 0) {
     currentSourceIndex = sourceIndex;
     const proxiedUrl = `/api/m3u8-proxy?url=${encodeURIComponent(streamUrl)}`;
-    logConsole(`Playing source index ${sourceIndex}: ${proxiedUrl}`);
+    logConsole(`Playing source index ${sourceIndex}: ${streamUrl}`);
 
     qualitySelect.innerHTML = '<option value="-1">Auto Quality</option>';
     subtitleSelect.innerHTML = '<option value="-1">Subtitles Off</option>';
@@ -273,7 +270,7 @@ function playSource(streamUrl, sourceIndex = 0) {
             levelLoadingTimeOut: 20000
         });
 
-        hlsInstance.loadSource(proxiedUrl);
+        hlsInstance.loadSource(streamUrl);
         hlsInstance.attachMedia(videoPlayer);
 
         function populateQualityLevels() {
