@@ -331,7 +331,10 @@ function playSource(streamUrl, sourceIndex = 0) {
             }
             const playPromise = videoPlayer.play();
             if (playPromise !== undefined) {
-                playPromise.catch(() => {
+                playPromise.then(() => {
+                    logConsole("Playback started successfully.");
+                }).catch((err) => {
+                    logConsole("Autoplay prevented, retrying muted: " + err.message);
                     videoPlayer.muted = true;
                     videoPlayer.play().catch(() => {});
                 });

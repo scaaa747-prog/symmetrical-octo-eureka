@@ -66,6 +66,8 @@ except Exception:
                     else:
                         handler.send_response(200)
                         handler.send_header('Content-Type', content_type or 'video/MP2T')
+                        handler.send_header('Content-Length', str(len(body)))
+                        handler.send_header('Accept-Ranges', 'bytes')
                         handler.send_header('Access-Control-Allow-Origin', '*')
                         handler.end_headers()
                         handler.wfile.write(body)
@@ -79,8 +81,8 @@ except Exception:
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed_path = urllib.parse.urlparse(self.path)
-        query = urllib.parse.parse_qs(parsed_path.query)
-        m3u8_url = query.get('url', [''])[0]
+        raw_q = parsed_path.query
+        m3u8_url = urllib.parse.unquote(raw_q.split('url=', 1)[1]) if 'url=' in raw_q else ''
         if not m3u8_url:
             self.send_response(400)
             self.end_headers()

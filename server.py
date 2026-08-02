@@ -425,6 +425,8 @@ def proxy_m3u8(m3u8_url, handler):
                 else:
                     handler.send_response(200)
                     handler.send_header('Content-Type', content_type or 'video/MP2T')
+                    handler.send_header('Content-Length', str(len(body)))
+                    handler.send_header('Accept-Ranges', 'bytes')
                     handler.send_header('Access-Control-Allow-Origin', '*')
                     handler.end_headers()
                     handler.wfile.write(body)
@@ -442,14 +444,29 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
+    def handle_error(self, request, client_address):
+        # Silently suppress broken pipe and socket disconnects
+        pass
+
 class RequestHandler(http.server.SimpleHTTPRequestHandler):
     do_HEAD = lambda self: self.do_GET()
+
+    def handle_one_request(self):
+        try:
+            super().handle_one_request()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception:
+            pass
 
     def end_headers(self):
         self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
         self.send_header('Pragma', 'no-cache')
         self.send_header('Expires', '0')
-        super().end_headers()
+        try:
+            super().end_headers()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def do_GET(self):
         parsed_path = urllib.parse.urlparse(self.path)
@@ -485,8 +502,8 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
             return
 
         elif parsed_path.path == '/api/m3u8-proxy':
-            query = urllib.parse.parse_qs(parsed_path.query)
-            m3u8_url = query.get('url', [''])[0]
+            raw_q = parsed_path.query
+            m3u8_url = urllib.parse.unquote(raw_q.split('url=', 1)[1]) if 'url=' in raw_q else ''
             if not m3u8_url:
                 self.send_response(400)
                 self.end_headers()
