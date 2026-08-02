@@ -216,7 +216,7 @@ def resolve_streams(tmdb_id, media_type="movie", season="1", episode="1"):
                 srcs = f.result()
                 if srcs:
                     for src in srcs:
-                        if src.get('url') and 'workers.dev' not in src['url'] and not any(s['url'] == src['url'] for s in all_sources):
+                        if src.get('url') and not any(s['url'] == src['url'] for s in all_sources):
                             all_sources.append(src)
                     if all_sources:
                         break
@@ -234,9 +234,6 @@ def resolve_streams(tmdb_id, media_type="movie", season="1", episode="1"):
         'genres': meta.get('genres', []),
         'sources': all_sources
     }
-
-    if all_sources:
-        RESOLVE_CACHE[cache_key] = (now, res_data)
 
     return res_data
 
@@ -455,6 +452,8 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     allow_reuse_address = True
 
 class RequestHandler(http.server.SimpleHTTPRequestHandler):
+    do_HEAD = lambda self: self.do_GET()
+
     def end_headers(self):
         self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
         self.send_header('Pragma', 'no-cache')
