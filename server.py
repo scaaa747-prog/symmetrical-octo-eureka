@@ -394,10 +394,12 @@ def stream_download_mp4(m3u8_url, title_str, handler):
 # M3U8 & TS CORS PROXY FOR HLS PLAYBACK
 # -------------------------------------------------------------
 def proxy_m3u8(m3u8_url, handler):
+    client_ip = handler.headers.get('X-Forwarded-For') or handler.headers.get('X-Real-IP') or '127.0.0.1'
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Origin': 'https://player.videasy.to',
-        'Referer': 'https://player.videasy.to/'
+        'Referer': 'https://player.videasy.to/',
+        'X-Forwarded-For': client_ip
     }
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
