@@ -11,6 +11,14 @@
     box-sizing: border-box;
     margin: 0;
     padding: 0;
+    -webkit-tap-highlight-color: transparent !important;
+    -webkit-touch-callout: none !important;
+    outline: none !important;
+}
+
+*:focus, video:focus, button:focus, select:focus, div:focus {
+    outline: none !important;
+    box-shadow: none !important;
 }
 
 body {

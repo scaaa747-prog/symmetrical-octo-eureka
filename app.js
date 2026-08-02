@@ -604,18 +604,40 @@ document.addEventListener('keydown', (e) => {
     showControls();
 });
 
-// Transparent Glass Controls Autohide System
+// Transparent Glass Controls Autohide & Toggle System
+let controlsVisible = true;
+
+function toggleControls() {
+    if (controlsVisible) {
+        if (customControls) customControls.classList.add('autohide');
+        if (topHeaderBar) topHeaderBar.classList.add('autohide');
+        controlsVisible = false;
+        clearTimeout(autohideTimer);
+    } else {
+        showControls();
+    }
+}
+
 function showControls() {
     if (customControls) customControls.classList.remove('autohide');
     if (topHeaderBar) topHeaderBar.classList.remove('autohide');
+    controlsVisible = true;
 
     clearTimeout(autohideTimer);
     if (!videoPlayer.paused) {
         autohideTimer = setTimeout(() => {
             if (customControls) customControls.classList.add('autohide');
             if (topHeaderBar) topHeaderBar.classList.add('autohide');
+            controlsVisible = false;
         }, 3200);
     }
+}
+
+if (videoPlayer) {
+    videoPlayer.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleControls();
+    });
 }
 
 playerContainer.addEventListener('mousemove', showControls);
