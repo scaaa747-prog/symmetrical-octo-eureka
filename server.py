@@ -166,6 +166,7 @@ def resolve_streams(tmdb_id, media_type="movie", season="1", episode="1"):
             if media_type == 'tv':
                 params['seasonId'] = season
                 params['episodeId'] = episode
+                params['totalSeasons'] = str(meta.get('number_of_seasons', 1))
 
             query_str = urllib.parse.urlencode(params)
             req_ep = urllib.request.Request(f"{ep}?{query_str}", headers=headers)
