@@ -1,5 +1,8 @@
 {
   "rewrites": [
+    { "source": "/api/resolve", "destination": "/api/resolve.py" },
+    { "source": "/api/m3u8-proxy", "destination": "/api/m3u8-proxy.py" },
+    { "source": "/api/download-video", "destination": "/api/download-video.py" },
     { "source": "/dwn/:path*", "destination": "/api/dwn.py" },
     { "source": "/movie/:path*", "destination": "/index.html" },
     { "source": "/tv/:path*", "destination": "/index.html" }
