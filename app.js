@@ -409,46 +409,48 @@ function playSource(streamUrl, sourceIndex = 0) {
         let triedProxy = false;
         let directRetries = 0;
         hlsInstance.on(Hls.Events.ERROR, (evt, data) => {
-            if (data.fatal) {
-                // workers.dev URLs: never proxy (Cloudflare blocks server-side)
-                // Instead, retry direct URL up to 2x, then try next source
-                if (isWorkersDev) {
-                    if (directRetries < 2) {
-                        directRetries++;
-                        logConsole(`workers.dev retry ${directRetries}: reloading direct...`);
-                        setTimeout(() => {
-                            hlsInstance.loadSource(streamUrl);
-                        }, 1500 * directRetries);
-                    } else if (currentSourceIndex + 1 < activeSources.length) {
-                        playSource(activeSources[currentSourceIndex + 1].url, currentSourceIndex + 1);
-                    } else {
-                        // Last resort: re-resolve fresh stream URL
-                        logConsole('All retries exhausted, re-resolving stream...');
-                        resolveAndPlay();
-                    }
-                    return;
-                }
-
-                // Normal CDN URLs: try proxy fallback first
-                if (!triedProxy && streamUrl && !streamUrl.includes('/api/m3u8-proxy')) {
-                    triedProxy = true;
-                    const proxiedUrl = `/api/m3u8-proxy?url=${encodeURIComponent(streamUrl)}`;
-                    logConsole(`Direct load failed, trying proxy fallback: ${proxiedUrl}`);
-                    hlsInstance.loadSource(proxiedUrl);
-                } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-                    logConsole("Network error, recovering...");
-                    hlsInstance.startLoad();
-                } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-                    logConsole("Media error, recovering...");
+            // Non-fatal: just recover silently
+            if (!data.fatal) {
+                if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
                     hlsInstance.recoverMediaError();
-                } else if (currentSourceIndex + 1 < activeSources.length) {
-                    const nextIdx = currentSourceIndex + 1;
-                    logConsole(`Fallback to audio/server source ${nextIdx + 1}`);
-                    playSource(activeSources[nextIdx].url, nextIdx);
-                } else {
-                    logConsole("All custom HLS sources exhausted.");
-                    showPlayerError("Stream connection failed. Please retry.");
                 }
+                return;
+            }
+
+            // workers.dev URLs: NEVER proxy — Cloudflare blocks server requests
+            if (isWorkersDev) {
+                if (directRetries < 2) {
+                    directRetries++;
+                    logConsole(`workers.dev retry ${directRetries}...`);
+                    setTimeout(() => { hlsInstance.loadSource(streamUrl); }, 1500 * directRetries);
+                } else if (currentSourceIndex + 1 < activeSources.length) {
+                    playSource(activeSources[currentSourceIndex + 1].url, currentSourceIndex + 1);
+                } else {
+                    // Show retry button — do NOT call resolveAndPlay() (causes restart loop)
+                    showPlayerError('Stream failed. Click Retry to reload.');
+                }
+                return;
+            }
+
+            // Normal CDN URLs: try proxy fallback first
+            if (!triedProxy && streamUrl && !streamUrl.includes('/api/m3u8-proxy')) {
+                triedProxy = true;
+                const proxiedUrl = `/api/m3u8-proxy?url=${encodeURIComponent(streamUrl)}`;
+                logConsole(`Direct load failed, trying proxy fallback: ${proxiedUrl}`);
+                hlsInstance.loadSource(proxiedUrl);
+            } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                logConsole("Network error, recovering...");
+                hlsInstance.startLoad();
+            } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                logConsole("Media error, recovering...");
+                hlsInstance.recoverMediaError();
+            } else if (currentSourceIndex + 1 < activeSources.length) {
+                const nextIdx = currentSourceIndex + 1;
+                logConsole(`Fallback to source ${nextIdx + 1}`);
+                playSource(activeSources[nextIdx].url, nextIdx);
+            } else {
+                logConsole("All HLS sources exhausted.");
+                showPlayerError("Stream connection failed. Please retry.");
             }
         });
     } else if (videoPlayer.canPlayType('application/vnd.apple.mpegurl')) {
