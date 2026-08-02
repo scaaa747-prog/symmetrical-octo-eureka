@@ -4,7 +4,13 @@ import urllib.parse
 import sys
 import os
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+cwd = os.getcwd()
+if cwd not in sys.path:
+    sys.path.append(cwd)
+root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if root_dir not in sys.path:
+    sys.path.append(root_dir)
+
 from server import resolve_streams
 
 class handler(BaseHTTPRequestHandler):
