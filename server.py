@@ -177,16 +177,23 @@ def resolve_streams(tmdb_id, media_type="movie", season="1", episode="1"):
         except Exception:
             return []
 
-    # Parallel fetch for Videasy endpoints (hdmovie & meine)
+    # Parallel fetch for all 9 Videasy speedracelight endpoints
     endpoints = [
+        "https://api.speedracelight.com/vsrc/sources-with-title",
         "https://api.speedracelight.com/hdmovie/sources-with-title",
-        "https://api.speedracelight.com/meine/sources-with-title"
+        "https://api.speedracelight.com/meine/sources-with-title",
+        "https://api.speedracelight.com/hianime/sources-with-title",
+        "https://api.speedracelight.com/downloader2/sources-with-title",
+        "https://api.speedracelight.com/superflix/sources-with-title",
+        "https://api.speedracelight.com/cdn/sources-with-title",
+        "https://api.speedracelight.com/lamovie/sources-with-title",
+        "https://api.speedracelight.com/m4uhd/sources-with-title"
     ]
 
     all_sources = []
     seen_urls = set()
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as ex:
         futures = [ex.submit(fetch_endpoint, ep) for ep in endpoints]
         for f in concurrent.futures.as_completed(futures):
             res = f.result()
