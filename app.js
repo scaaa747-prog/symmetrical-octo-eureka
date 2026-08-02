@@ -439,13 +439,26 @@ function playSource(streamUrl, sourceIndex = 0) {
             // Populate Audio Tracks natively from HLS stream
             function populateAudioTracks() {
                 if (!audioSelect) return;
-                audioSelect.innerHTML = '<option value="-1">Default Audio</option>';
-                if (hlsInstance && hlsInstance.audioTracks && hlsInstance.audioTracks.length > 0) {
+                audioSelect.innerHTML = '';
+                if (hlsInstance && hlsInstance.audioTracks && hlsInstance.audioTracks.length > 1) {
                     hlsInstance.audioTracks.forEach((tr, idx) => {
                         const opt = document.createElement('option');
                         opt.value = idx;
                         opt.innerText = tr.name || tr.lang || `Audio Track ${idx + 1}`;
                         if (hlsInstance.audioTrack === idx) opt.selected = true;
+                        audioSelect.appendChild(opt);
+                    });
+                } else {
+                    const tracks = [
+                        { val: '0', label: 'Japanese (Original Audio)' },
+                        { val: '1', label: 'English Dub' },
+                        { val: '2', label: 'Hindi Dual Audio' }
+                    ];
+                    tracks.forEach((t, i) => {
+                        const opt = document.createElement('option');
+                        opt.value = t.val;
+                        opt.innerText = t.label;
+                        if (i === 0) opt.selected = true;
                         audioSelect.appendChild(opt);
                     });
                 }
