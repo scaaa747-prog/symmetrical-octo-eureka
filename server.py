@@ -10,8 +10,6 @@ import sys
 import ssl
 import concurrent.futures
 import time
-import threading
-import random
 
 PORT = 3000
 
@@ -125,40 +123,9 @@ def decrypt_videasy_payload(enc_b64, media_id_str, seed_str):
 
 # -------------------------------------------------------------
 # SERVER STREAM RESOLVER FUNCTION
-# In-Memory Stream Cache for 0.001s Instant Load
+# Stream URL cache — seed is fetched once per resolve, not stored
 RESOLVE_CACHE = {}
 CACHE_TTL_SECONDS = 300
-
-# Seed cache: {tmdb_id: {'seed': str, 'expires_at': float}}
-SEED_CACHE = {}
-SEED_CACHE_LOCK = threading.Lock()
-
-def get_or_fetch_seed(tmdb_id, headers):
-    """Returns a valid seed for tmdb_id, fetching a fresh one if expired."""
-    with SEED_CACHE_LOCK:
-        cached = SEED_CACHE.get(str(tmdb_id))
-        if cached and time.time() < cached['expires_at']:
-            return cached['seed']
-
-    # Fetch new seed (outside lock to not block)
-    for attempt in range(3):
-        try:
-            seed_url = f"https://api.speedracelight.com/seed?mediaId={tmdb_id}&_t={int(time.time()*1000)}"
-            req = urllib.request.Request(seed_url, headers=headers)
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                data = json.loads(resp.read().decode('utf-8'))
-                seed = data.get('seed')
-                # ttlMs tells us how long seed is valid; default 25s safety margin
-                ttl_ms = data.get('ttlMs', 30000)
-                expires_at = time.time() + (ttl_ms / 1000.0) - 2.0  # 2s safety buffer
-                if seed:
-                    with SEED_CACHE_LOCK:
-                        SEED_CACHE[str(tmdb_id)] = {'seed': seed, 'expires_at': expires_at}
-                    return seed
-        except Exception:
-            if attempt < 2:
-                time.sleep(0.5 * (attempt + 1))
-    return None
 
 # -------------------------------------------------------------
 # INSTANT PARALLEL STREAM RESOLVER WITH MEMORY CACHING
@@ -166,6 +133,7 @@ def get_or_fetch_seed(tmdb_id, headers):
 def resolve_streams(tmdb_id, media_type="movie", season="1", episode="1"):
     cache_key = f"{media_type}_{tmdb_id}_{season}_{episode}"
     now = time.time()
+    # Return cached URL if still valid — no need to re-fetch seed at all
     if cache_key in RESOLVE_CACHE:
         entry = RESOLVE_CACHE[cache_key]
         if now - entry['timestamp'] < CACHE_TTL_SECONDS and entry['data'].get('sources'):
@@ -185,8 +153,6 @@ def resolve_streams(tmdb_id, media_type="movie", season="1", episode="1"):
         'Sec-Ch-Ua-Platform': '"Windows"'
     }
 
-    import concurrent.futures
-
     def fetch_meta():
         try:
             meta_url = f"https://db.speedracelight.com/3/{media_type}/{tmdb_id}?append_to_response=external_ids&language=en"
@@ -196,13 +162,20 @@ def resolve_streams(tmdb_id, media_type="movie", season="1", episode="1"):
         except Exception:
             return {}
 
-    def fetch_seed_cached():
-        return get_or_fetch_seed(tmdb_id, headers)
+    def fetch_seed_once():
+        """Fetch seed ONE TIME — only needed to decrypt the stream URL, not stored."""
+        try:
+            seed_url = f"https://api.speedracelight.com/seed?mediaId={tmdb_id}"
+            req = urllib.request.Request(seed_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                return json.loads(resp.read().decode('utf-8')).get('seed')
+        except Exception:
+            return None
 
-    # Fetch Meta & Seed in Parallel (single seed shared by both endpoints)
+    # Fetch meta + seed in parallel — one shot
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
         f_meta = executor.submit(fetch_meta)
-        f_seed = executor.submit(fetch_seed_cached)
+        f_seed = executor.submit(fetch_seed_once)
         meta = f_meta.result() or {}
         seed = f_seed.result()
 
@@ -211,54 +184,39 @@ def resolve_streams(tmdb_id, media_type="movie", season="1", episode="1"):
     year = release_date.split('-')[0]
     imdb_id = meta.get('imdb_id') or (meta.get('external_ids', {}).get('imdb_id') if meta.get('external_ids') else '') or ''
 
-    def fetch_endpoint_sources(ep, use_seed):
-        """Fetch sources from endpoint. If seed expired mid-flight, auto-refresh."""
-        for attempt in range(2):
-            try:
-                # On retry: force-evict cached seed so a fresh one is fetched
-                if attempt > 0:
-                    with SEED_CACHE_LOCK:
-                        SEED_CACHE.pop(str(tmdb_id), None)
-                    use_seed = get_or_fetch_seed(tmdb_id, headers)
+    def fetch_endpoint_sources(ep):
+        if not seed:
+            return []
+        try:
+            params = {
+                'title': title,
+                'mediaType': media_type,
+                'year': year,
+                'tmdbId': tmdb_id,
+                'imdbId': imdb_id,
+                'enc': '2',
+                'seed': seed
+            }
+            if media_type == 'tv':
+                params['seasonId'] = season
+                params['episodeId'] = episode
 
-                if not use_seed:
-                    return []
+            query_str = urllib.parse.urlencode(params)
+            req_ep = urllib.request.Request(f"{ep}?{query_str}", headers=headers)
+            with urllib.request.urlopen(req_ep, timeout=8) as resp:
+                enc_body = resp.read().decode('utf-8')
+                decrypted_str = decrypt_videasy_payload(enc_body, str(tmdb_id), seed)
+                parsed = json.loads(decrypted_str)
+                return parsed.get('sources', [])
+        except Exception:
+            return []
 
-                params = {
-                    'title': title,
-                    'mediaType': media_type,
-                    'year': year,
-                    'tmdbId': tmdb_id,
-                    'imdbId': imdb_id,
-                    'enc': '2',
-                    'seed': use_seed
-                }
-                if media_type == 'tv':
-                    params['seasonId'] = season
-                    params['episodeId'] = episode
+    # 1st: hdmovie CDN (fast direct streams)
+    all_sources = fetch_endpoint_sources("https://api.speedracelight.com/hdmovie/sources-with-title")
 
-                query_str = urllib.parse.urlencode(params)
-                target_url = f"{ep}?{query_str}"
-
-                req_ep = urllib.request.Request(target_url, headers=headers)
-                with urllib.request.urlopen(req_ep, timeout=8) as resp:
-                    enc_body = resp.read().decode('utf-8')
-                    decrypted_str = decrypt_videasy_payload(enc_body, str(tmdb_id), use_seed)
-                    parsed = json.loads(decrypted_str)
-                    srcs = parsed.get('sources', [])
-                    if srcs:
-                        return srcs
-            except Exception:
-                if attempt == 0:
-                    time.sleep(0.3)
-        return []
-
-    # 1st Priority: Direct HD Movie Stream Endpoint
-    all_sources = fetch_endpoint_sources("https://api.speedracelight.com/hdmovie/sources-with-title", seed)
-
-    # 2nd Priority Fallback: Meine Backup Stream Endpoint
+    # 2nd fallback: meine
     if not all_sources:
-        all_sources = fetch_endpoint_sources("https://api.speedracelight.com/meine/sources-with-title", seed)
+        all_sources = fetch_endpoint_sources("https://api.speedracelight.com/meine/sources-with-title")
 
     res_data = {
         'success': True,
