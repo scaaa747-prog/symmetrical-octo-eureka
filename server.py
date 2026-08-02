@@ -279,25 +279,14 @@ def resolve_streams(tmdb_id, media_type="movie", season="1", episode="1"):
                     seen_urls.add(u)
                     all_sources.append(s)
 
-    # Fallback embed sources for items without direct HLS (e.g. Naruto, specific anime/series)
+    # Only direct HLS video stream sources (NO IFRAME EMBEDS)
     if not all_sources:
-        if media_type == 'tv':
-            videasy_url = f"https://player.videasy.to/tv/{tmdb_id}/{season}/{episode}"
-            vidsrc_url = f"https://vidsrc.me/embed/tv?tmdb={tmdb_id}&season={season}&episode={episode}"
-            vidsrc_to_url = f"https://vidsrc.to/embed/tv/{tmdb_id}/{season}/{episode}"
-            multi_url = f"https://multiembed.mov/?video_id={tmdb_id}&tmdb=1&s={season}&e={episode}"
-        else:
-            videasy_url = f"https://player.videasy.to/movie/{tmdb_id}"
-            vidsrc_url = f"https://vidsrc.me/embed/movie?tmdb={tmdb_id}"
-            vidsrc_to_url = f"https://vidsrc.to/embed/movie/{tmdb_id}"
-            multi_url = f"https://multiembed.mov/?video_id={tmdb_id}&tmdb=1"
-
-        all_sources = [
-            {'quality': 'Videasy Server 1', 'url': videasy_url, 'is_embed': True},
-            {'quality': 'VidSrc Server 2', 'url': vidsrc_url, 'is_embed': True},
-            {'quality': 'VidSrc Pro 3', 'url': vidsrc_to_url, 'is_embed': True},
-            {'quality': 'MultiEmbed 4', 'url': multi_url, 'is_embed': True}
-        ]
+        return {
+            'success': False,
+            'title': raw_title,
+            'year': year,
+            'error': 'No direct HLS stream available for this title.'
+        }
 
     res_data = {
         'success': True,
