@@ -178,7 +178,7 @@ async function resolveAndPlay() {
         populateEpisodeOptions(24);
     }
 
-    logConsole(`Resolving Videasy stream for ${mediaType} ${currentMediaId} (S:${currentSeason} E:${currentEpisode})...`);
+    logConsole(`Resolving stream for ${mediaType} ${currentMediaId} (S:${currentSeason} E:${currentEpisode})...`);
 
     try {
         const fetchUrl = mediaType === 'tv'
@@ -190,8 +190,8 @@ async function resolveAndPlay() {
         const data = await resp.json();
 
         if (!data.success || !data.sources || data.sources.length === 0) {
-            logConsole("No direct HLS source, using embedded Videasy stream fallback.");
-            playFallbackIframe();
+            logConsole("No direct HLS source found.");
+            showPlayerError("Could not resolve stream source. Please retry.");
             return;
         }
 
@@ -214,38 +214,21 @@ async function resolveAndPlay() {
         playerLoading.classList.add('hidden');
 
     } catch (err) {
-        logConsole(`Resolution notice: ${err.message}. Triggering fallback...`);
-        playFallbackIframe();
+        logConsole(`Resolution error: ${err.message}`);
+        showPlayerError("Unable to load stream. Please retry.");
     }
 }
 
-const fallbackIframe = document.getElementById('fallback-iframe');
-
-function playFallbackIframe() {
-    logConsole("Switching to Videasy Embedded Stream Player Fallback...");
-    const iframeUrl = mediaType === 'tv'
-        ? `https://player.videasy.to/tv/${currentMediaId}/${currentSeason}/${currentEpisode}`
-        : `https://player.videasy.to/movie/${currentMediaId}`;
-
-    if (fallbackIframe) {
-        fallbackIframe.src = iframeUrl;
-        fallbackIframe.classList.remove('hidden');
-    }
-    if (videoPlayer) {
-        videoPlayer.classList.add('hidden');
-    }
-    if (customControls) {
-        customControls.classList.remove('hidden');
-    }
+function showPlayerError(msg) {
     if (playerLoading) playerLoading.classList.add('hidden');
-    if (playerError) playerError.classList.add('hidden');
+    if (playerError) {
+        const msgEl = document.getElementById('error-message');
+        if (msgEl) msgEl.innerText = msg;
+        playerError.classList.remove('hidden');
+    }
 }
 
 function restoreCustomPlayer() {
-    if (fallbackIframe) {
-        fallbackIframe.src = 'about:blank';
-        fallbackIframe.classList.add('hidden');
-    }
     if (videoPlayer) {
         videoPlayer.classList.remove('hidden');
     }
@@ -261,8 +244,7 @@ function restoreCustomPlayer() {
 // -------------------------------------------------------------
 function playSource(streamUrl, sourceIndex = 0) {
     currentSourceIndex = sourceIndex;
-    const proxiedUrl = `/api/m3u8-proxy?url=${encodeURIComponent(streamUrl)}`;
-    logConsole(`Playing source index ${sourceIndex}: ${proxiedUrl}`);
+    logConsole(`Playing source index ${sourceIndex}: ${streamUrl}`);
 
     qualitySelect.innerHTML = '<option value="-1">Auto Quality</option>';
     subtitleSelect.innerHTML = '<option value="-1">Subtitles Off</option>';
@@ -271,15 +253,17 @@ function playSource(streamUrl, sourceIndex = 0) {
         if (hlsInstance) hlsInstance.destroy();
         hlsInstance = new Hls({
             enableWorker: true,
-            lowLatencyMode: true,
+            lowLatencyMode: false,
             startLevel: -1,
-            maxBufferLength: 10,
-            maxMaxBufferLength: 20,
-            maxBufferSize: 30 * 1024 * 1024,
-            manifestLoadingTimeOut: 5000,
-            fragLoadingTimeOut: 5000
+            maxBufferLength: 30,
+            maxMaxBufferLength: 60,
+            maxBufferSize: 60 * 1024 * 1024,
+            manifestLoadingTimeOut: 20000,
+            fragLoadingTimeOut: 20000,
+            levelLoadingTimeOut: 20000
         });
-        hlsInstance.loadSource(proxiedUrl);
+
+        hlsInstance.loadSource(streamUrl);
         hlsInstance.attachMedia(videoPlayer);
 
         function populateQualityLevels() {
@@ -369,9 +353,15 @@ function playSource(streamUrl, sourceIndex = 0) {
         hlsInstance.on(Hls.Events.LEVEL_SWITCHED, populateQualityLevels);
 
         // Error Fallback
+        let triedProxy = false;
         hlsInstance.on(Hls.Events.ERROR, (evt, data) => {
             if (data.fatal) {
-                if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                if (!triedProxy && streamUrl && !streamUrl.includes('/api/m3u8-proxy')) {
+                    triedProxy = true;
+                    const proxiedUrl = `/api/m3u8-proxy?url=${encodeURIComponent(streamUrl)}`;
+                    logConsole(`Direct load failed, trying proxy fallback: ${proxiedUrl}`);
+                    hlsInstance.loadSource(proxiedUrl);
+                } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
                     logConsole("Network error, recovering...");
                     hlsInstance.startLoad();
                 } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
@@ -382,13 +372,13 @@ function playSource(streamUrl, sourceIndex = 0) {
                     logConsole(`Fallback to audio/server source ${nextIdx + 1}`);
                     playSource(activeSources[nextIdx].url, nextIdx);
                 } else {
-                    logConsole("All custom HLS sources exhausted. Triggering Videasy fallback iframe...");
-                    playFallbackIframe();
+                    logConsole("All custom HLS sources exhausted.");
+                    showPlayerError("Stream connection failed. Please retry.");
                 }
             }
         });
     } else if (videoPlayer.canPlayType('application/vnd.apple.mpegurl')) {
-        videoPlayer.src = proxiedUrl;
+        videoPlayer.src = streamUrl;
         videoPlayer.play().catch(() => {});
     }
 }
