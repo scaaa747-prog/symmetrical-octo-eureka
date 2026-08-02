@@ -10,6 +10,7 @@ import sys
 import ssl
 import concurrent.futures
 import time
+import unicodedata
 
 PORT = 3000
 
@@ -110,22 +111,69 @@ def decrypt_videasy_payload(enc_b64, media_id_str, seed_str):
     raw_b64 = enc_b64.replace('-', '+').replace('_', '/')
     raw_b64 += '=' * ((4 - len(raw_b64) % 4) % 4)
     enc_bytes = bytearray(base64.b64decode(raw_b64))
-    prng_bytes = generate_prng(seed_str, media_id_str, len(enc_bytes))
+    return uint32(e)
 
-    for idx in range(len(enc_bytes)):
-        enc_bytes[idx] ^= prng_bytes[idx]
+def parse_iv(t, n):
+    r = t
+    for s in range(32):
+        if i_func(n): r = uint32((r << 1) ^ (r >> 31))
+        else: r = uint32((r >> 1) ^ (r << 31))
+        r ^= PRNG_F[(n + s) & 15]
+        r = v_func(r)
+    return uint32(r)
 
-    for idx in range(len(HEADER_SIG)):
-        if enc_bytes[idx] != HEADER_SIG[idx]:
-            raise Exception("Signature mismatch")
+def generate_key(e):
+    t = uint32(e ^ 1116352408)
+    n = uint32(e ^ 1899447441)
+    r = uint32(e ^ 3049323471)
+    o = uint32(e ^ 3921009573)
+    s = []
+    for i in range(16):
+        t = parse_iv(t, i)
+        n = parse_iv(n, i + 1)
+        r = parse_iv(r, i + 2)
+        o = parse_iv(o, i + 3)
+        l = uint32(t ^ n ^ r ^ o)
+        s.extend([(l >> 24) & 255, (l >> 16) & 255, (l >> 8) & 255, l & 255])
+    return s
 
-    return enc_bytes[len(HEADER_SIG):].decode('utf-8')
+def decrypt_videasy_payload(enc_str, tmdb_id, seed):
+    enc_bytes = base64.b64decode(enc_str)
+    if list(enc_bytes[:4]) != HEADER_SIG:
+        raise Exception("Invalid Videasy payload header")
+
+    seed_full = str(tmdb_id) + str(seed)
+    seed_sum = sum(ord(c) for c in seed_full)
+    key = generate_key(seed_sum)
+
+    dec_bytes = bytearray(len(enc_bytes) - 4)
+    for i in range(4, len(enc_bytes)):
+        dec_bytes[i - 4] = enc_bytes[i] ^ key[(i - 4) % 64]
+
+    dec_str = dec_bytes.decode('utf-8')
+    sig_len = dec_str.find(':')
+    if sig_len == -1:
+        raise Exception("No signature separator found")
+    
+    sig = dec_str[:sig_len]
+    raw_payload = dec_str[sig_len+1:]
+    
+    expected_sum = sum(ord(c) for c in raw_payload)
+    if int(sig) != expected_sum:
+        raise Exception("Payload signature mismatch")
+
+    return raw_payload
 
 # -------------------------------------------------------------
 # SERVER STREAM RESOLVER FUNCTION
 # Stream URL cache — seed is fetched once per resolve, not stored
 RESOLVE_CACHE = {}
 CACHE_TTL_SECONDS = 300
+
+def clean_title_string(t):
+    if not t: return "Media"
+    normalized = unicodedata.normalize('NFKD', str(t)).encode('ASCII', 'ignore').decode('utf-8')
+    return normalized.strip() or str(t)
 
 # -------------------------------------------------------------
 # INSTANT PARALLEL STREAM RESOLVER WITH MEMORY CACHING
@@ -167,7 +215,7 @@ def resolve_streams(tmdb_id, media_type="movie", season="1", episode="1"):
         try:
             seed_url = f"https://api.speedracelight.com/seed?mediaId={tmdb_id}"
             req = urllib.request.Request(seed_url, headers=headers)
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            with urllib.request.urlopen(req, timeout=4) as resp:
                 return json.loads(resp.read().decode('utf-8')).get('seed')
         except Exception:
             return None
@@ -179,12 +227,13 @@ def resolve_streams(tmdb_id, media_type="movie", season="1", episode="1"):
         meta = f_meta.result() or {}
         seed = f_seed.result()
 
-    title = meta.get('title') or meta.get('original_title') or meta.get('name') or meta.get('original_name') or "Media"
+    raw_title = meta.get('title') or meta.get('original_title') or meta.get('name') or meta.get('original_name') or "Media"
+    title = clean_title_string(raw_title)
     release_date = meta.get('release_date') or meta.get('first_air_date') or '2026-01-01'
     year = release_date.split('-')[0]
     imdb_id = meta.get('imdb_id') or (meta.get('external_ids', {}).get('imdb_id') if meta.get('external_ids') else '') or ''
 
-    def fetch_endpoint_sources(ep):
+    def fetch_endpoint(ep):
         if not seed:
             return []
         try:
@@ -203,7 +252,7 @@ def resolve_streams(tmdb_id, media_type="movie", season="1", episode="1"):
 
             query_str = urllib.parse.urlencode(params)
             req_ep = urllib.request.Request(f"{ep}?{query_str}", headers=headers)
-            with urllib.request.urlopen(req_ep, timeout=8) as resp:
+            with urllib.request.urlopen(req_ep, timeout=3.5) as resp:
                 enc_body = resp.read().decode('utf-8')
                 decrypted_str = decrypt_videasy_payload(enc_body, str(tmdb_id), seed)
                 parsed = json.loads(decrypted_str)
@@ -211,16 +260,45 @@ def resolve_streams(tmdb_id, media_type="movie", season="1", episode="1"):
         except Exception:
             return []
 
-    # 1st: hdmovie CDN (fast direct streams)
-    all_sources = fetch_endpoint_sources("https://api.speedracelight.com/hdmovie/sources-with-title")
+    # Parallel fetch for Videasy endpoints (hdmovie & meine)
+    endpoints = [
+        "https://api.speedracelight.com/hdmovie/sources-with-title",
+        "https://api.speedracelight.com/meine/sources-with-title"
+    ]
 
-    # 2nd fallback: meine
+    all_sources = []
+    seen_urls = set()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
+        futures = [ex.submit(fetch_endpoint, ep) for ep in endpoints]
+        for f in concurrent.futures.as_completed(futures):
+            res = f.result()
+            for s in res:
+                u = s.get('url')
+                if u and u not in seen_urls:
+                    seen_urls.add(u)
+                    all_sources.append(s)
+
+    # Fallback embed sources for items without direct HLS (e.g. Naruto, specific anime/series)
     if not all_sources:
-        all_sources = fetch_endpoint_sources("https://api.speedracelight.com/meine/sources-with-title")
+        if media_type == 'tv':
+            vidsrc_url = f"https://vidsrc.me/embed/tv?tmdb={tmdb_id}&season={season}&episode={episode}"
+            vidsrc_to_url = f"https://vidsrc.to/embed/tv/{tmdb_id}/{season}/{episode}"
+            multi_url = f"https://multiembed.mov/?video_id={tmdb_id}&tmdb=1&s={season}&e={episode}"
+        else:
+            vidsrc_url = f"https://vidsrc.me/embed/movie?tmdb={tmdb_id}"
+            vidsrc_to_url = f"https://vidsrc.to/embed/movie/{tmdb_id}"
+            multi_url = f"https://multiembed.mov/?video_id={tmdb_id}&tmdb=1"
+
+        all_sources = [
+            {'quality': 'VidSrc Server 1', 'url': vidsrc_url, 'is_embed': True},
+            {'quality': 'VidSrc Server 2', 'url': vidsrc_to_url, 'is_embed': True},
+            {'quality': 'MultiEmbed Server 3', 'url': multi_url, 'is_embed': True}
+        ]
 
     res_data = {
         'success': True,
-        'title': title,
+        'title': raw_title,
         'year': year,
         'overview': meta.get('overview', ''),
         'rating': meta.get('vote_average', 0),
