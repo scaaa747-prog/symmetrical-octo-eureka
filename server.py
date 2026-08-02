@@ -188,33 +188,43 @@ def resolve_streams(tmdb_id, media_type="movie", season="1", episode="1"):
     year = release_date.split('-')[0]
     imdb_id = meta.get('imdb_id') or (meta.get('external_ids', {}).get('imdb_id') if meta.get('external_ids') else '') or ''
 
-    def fetch_endpoint(ep):
-        if not seed:
+    def fetch_endpoint(ep, current_seed=None):
+        active_seed = current_seed or seed
+        if not active_seed:
             return []
-        try:
-            params = {
-                'title': title,
-                'mediaType': media_type,
-                'year': year,
-                'tmdbId': tmdb_id,
-                'imdbId': imdb_id,
-                'enc': '2',
-                'seed': seed
-            }
-            if media_type == 'tv':
-                params['seasonId'] = season
-                params['episodeId'] = episode
-                params['totalSeasons'] = str(meta.get('number_of_seasons', 1))
+        
+        for retry_count in range(2):
+            try:
+                params = {
+                    'title': title,
+                    'mediaType': media_type,
+                    'year': year,
+                    'tmdbId': tmdb_id,
+                    'imdbId': imdb_id,
+                    'enc': '2',
+                    'seed': active_seed
+                }
+                if media_type == 'tv':
+                    params['seasonId'] = season
+                    params['episodeId'] = episode
+                    params['totalSeasons'] = str(meta.get('number_of_seasons', 1))
 
-            query_str = urllib.parse.urlencode(params)
-            req_ep = urllib.request.Request(f"{ep}?{query_str}", headers=headers)
-            with urllib.request.urlopen(req_ep, timeout=3.5) as resp:
-                enc_body = resp.read().decode('utf-8')
-                decrypted_str = decrypt_videasy_payload(enc_body, str(tmdb_id), seed)
-                parsed = json.loads(decrypted_str)
-                return parsed.get('sources', [])
-        except Exception:
-            return []
+                query_str = urllib.parse.urlencode(params)
+                req_ep = urllib.request.Request(f"{ep}?{query_str}", headers=headers)
+                with urllib.request.urlopen(req_ep, timeout=4) as resp:
+                    enc_body = resp.read().decode('utf-8')
+                    decrypted_str = decrypt_videasy_payload(enc_body, str(tmdb_id), active_seed)
+                    parsed = json.loads(decrypted_str)
+                    return parsed.get('sources', [])
+            except urllib.error.HTTPError as he:
+                if he.code == 401 and retry_count == 0:
+                    active_seed = fetch_seed_once()
+                    if not active_seed: break
+                else:
+                    break
+            except Exception:
+                break
+        return []
 
     # Parallel fetch for all 9 Videasy speedracelight endpoints
     endpoints = [
