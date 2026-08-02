@@ -238,9 +238,6 @@ def resolve_streams(tmdb_id, media_type="movie", season="1", episode="1"):
                 if s.get('url') and not any(x['url'] == s['url'] for x in all_sources):
                     all_sources.append(s)
 
-    # Filter out broken Cloudflare workers.dev streams
-    all_sources = [s for s in all_sources if 'workers.dev' not in s.get('url', '')]
-
     res_data = {
         'success': True,
         'title': title,
