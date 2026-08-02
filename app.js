@@ -195,13 +195,22 @@ async function resolveAndPlay() {
             return;
         }
 
-        // Update Title and Badge
+        // Update Title, Badge and Thumbnail Poster
         if (data.title) {
             const epBadge = mediaType === 'tv' ? ` (S${currentSeason} E${currentEpisode})` : '';
             mediaTitle.innerText = `${data.title}${epBadge}${data.year ? ` (${data.year})` : ''}`;
             if (mediaInfoBadge) {
                 mediaInfoBadge.innerHTML = `<i class="fa-solid fa-film"></i> OFC Movies`;
             }
+        }
+
+        if (data.backdrop_path || data.poster_path) {
+            const imgPath = data.backdrop_path || data.poster_path;
+            const fullPosterUrl = `https://image.tmdb.org/t/p/w1280${imgPath}`;
+            videoPlayer.setAttribute('poster', fullPosterUrl);
+            playerContainer.style.backgroundImage = `linear-gradient(rgba(0,0,0,0.4), rgba(0,0,0,0.8)), url('${fullPosterUrl}')`;
+            playerContainer.style.backgroundSize = 'cover';
+            playerContainer.style.backgroundPosition = 'center';
         }
 
         restoreCustomPlayer();

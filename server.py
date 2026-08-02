@@ -151,7 +151,7 @@ def resolve_streams(tmdb_id, media_type="movie", season="1", episode="1"):
 
     def fetch_seed():
         try:
-            seed_url = f"https://api.speedracelight.com/seed?mediaId={tmdb_id}"
+            seed_url = f"https://api.speedracelight.com/seed?mediaId={tmdb_id}&_t={int(time.time()*1000)}"
             req_seed = urllib.request.Request(seed_url, headers=headers)
             with urllib.request.urlopen(req_seed, timeout=4) as resp:
                 return json.loads(resp.read().decode('utf-8')).get('seed')
@@ -177,7 +177,7 @@ def resolve_streams(tmdb_id, media_type="movie", season="1", episode="1"):
 
     def fetch_endpoint_sources(ep):
         try:
-            seed_url = f"https://api.speedracelight.com/seed?mediaId={tmdb_id}"
+            seed_url = f"https://api.speedracelight.com/seed?mediaId={tmdb_id}&_t={int(time.time()*1000)}"
             req_seed = urllib.request.Request(seed_url, headers=headers)
             with urllib.request.urlopen(req_seed, timeout=4) as resp:
                 ep_seed = json.loads(resp.read().decode('utf-8')).get('seed')
