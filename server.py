@@ -399,9 +399,12 @@ def proxy_m3u8(m3u8_url, handler):
         'Origin': 'https://player.videasy.to',
         'Referer': 'https://player.videasy.to/'
     }
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
     req = urllib.request.Request(m3u8_url, headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=12) as resp:
+        with urllib.request.urlopen(req, timeout=12, context=ctx) as resp:
             content_type = resp.headers.get('Content-Type', '')
             body = resp.read()
             
@@ -478,6 +481,18 @@ class RequestHandler(http.server.SimpleHTTPRequestHandler):
             except Exception as e:
                 err_resp = {'success': False, 'error': str(e)}
                 self.wfile.write(json.dumps(err_resp).encode('utf-8'))
+
+        elif parsed_path.path == '/ofcmovies_project.zip':
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/zip')
+            self.send_header('Content-Disposition', 'attachment; filename="ofcmovies_project.zip"')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            zip_path = '/root/ofcmovies_project.zip'
+            if os.path.exists(zip_path):
+                with open(zip_path, 'rb') as f:
+                    self.wfile.write(f.read())
+            return
 
         elif parsed_path.path == '/api/m3u8-proxy':
             query = urllib.parse.parse_qs(parsed_path.query)
