@@ -286,11 +286,11 @@ function playSource(streamUrl, sourceIndex = 0) {
     qualitySelect.innerHTML = '<option value="-1">Auto Quality</option>';
     subtitleSelect.innerHTML = '<option value="-1">Subtitles Off</option>';
 
-    const activeSrcObj = activeSources && activeSources[sourceIndex];
     const isEmbed = (activeSrcObj && activeSrcObj.is_embed) || 
                     streamUrl.includes('/embed') || 
                     streamUrl.includes('vidsrc') || 
                     streamUrl.includes('multiembed') || 
+                    streamUrl.includes('videasy.to') || 
                     !streamUrl.includes('.m3u8');
 
     let existingIframe = document.getElementById('embed-iframe');
