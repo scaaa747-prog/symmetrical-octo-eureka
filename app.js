@@ -277,7 +277,7 @@ function restoreCustomPlayer() {
 
 
 // -------------------------------------------------------------
-// PLAY DIRECT HLS STREAM VIA CUSTOM PLAYER
+// PLAY HLS STREAM VIA DIRECT CDN OR SMART EMBED FALLBACK
 // -------------------------------------------------------------
 function playSource(streamUrl, sourceIndex = 0) {
     currentSourceIndex = sourceIndex;
@@ -286,6 +286,54 @@ function playSource(streamUrl, sourceIndex = 0) {
     qualitySelect.innerHTML = '<option value="-1">Auto Quality</option>';
     subtitleSelect.innerHTML = '<option value="-1">Subtitles Off</option>';
 
+    const activeSrcObj = activeSources && activeSources[sourceIndex];
+    const isEmbed = (activeSrcObj && activeSrcObj.is_embed) || 
+                    streamUrl.includes('/embed') || 
+                    streamUrl.includes('vidsrc') || 
+                    streamUrl.includes('multiembed') || 
+                    streamUrl.includes('videasy.to') || 
+                    !streamUrl.includes('.m3u8');
+
+    let existingIframe = document.getElementById('embed-iframe');
+
+    if (isEmbed) {
+        if (hlsInstance) {
+            hlsInstance.destroy();
+            hlsInstance = null;
+        }
+        if (videoPlayer) {
+            videoPlayer.classList.add('hidden');
+            try { videoPlayer.pause(); } catch(e) {}
+        }
+        if (customControls) {
+            customControls.classList.add('hidden');
+        }
+
+        const thumb = document.getElementById('thumbnail-overlay');
+        if (thumb) thumb.remove();
+
+        if (!existingIframe) {
+            existingIframe = document.createElement('iframe');
+            existingIframe.id = 'embed-iframe';
+            existingIframe.style.cssText = 'position:absolute; inset:0; width:100%; height:100%; border:none; z-index:10; background:#000;';
+            existingIframe.allow = 'autoplay; encrypted-media; fullscreen; picture-in-picture';
+            existingIframe.setAttribute('allowfullscreen', 'true');
+            existingIframe.src = streamUrl;
+            playerContainer.appendChild(existingIframe);
+        } else {
+            existingIframe.classList.remove('hidden');
+            existingIframe.src = streamUrl;
+        }
+
+        if (playerLoading) playerLoading.classList.add('hidden');
+        return;
+    }
+
+    // Direct HLS stream playback
+    if (existingIframe) {
+        existingIframe.classList.add('hidden');
+        existingIframe.src = 'about:blank';
+    }
     if (videoPlayer) {
         videoPlayer.classList.remove('hidden');
     }

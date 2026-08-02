@@ -24,6 +24,14 @@ def b_func(e): return ((e * (e + 1)) & 1) == 0
 def i_func(e): return ((e * (e + 1)) & 1) == 1
 def uint32(x): return x & 0xFFFFFFFF
 
+def v_func(e):
+    e = uint32(e)
+    e ^= (e >> 16)
+    e = uint32((e * 2246822507) & 0xFFFFFFFF)
+    e ^= (e >> 13)
+    e = uint32((e * 3266489909) & 0xFFFFFFFF)
+    return uint32(e ^ (e >> 16))
+
 
 
 def parse_iv(t, n):
@@ -204,14 +212,25 @@ def resolve_streams(tmdb_id, media_type="movie", season="1", episode="1"):
                     seen_urls.add(u)
                     all_sources.append(s)
 
-    # Only direct HLS video stream sources (NO IFRAME EMBEDS)
+    # Smart Hybrid System: Return direct HLS if available, else fallback embed sources for Turnstile-protected titles like Naruto
     if not all_sources:
-        return {
-            'success': False,
-            'title': raw_title,
-            'year': year,
-            'error': 'No direct HLS stream available for this title.'
-        }
+        if media_type == 'tv':
+            videasy_url = f"https://player.videasy.to/tv/{tmdb_id}/{season}/{episode}"
+            vidsrc_url = f"https://vidsrc.me/embed/tv?tmdb={tmdb_id}&season={season}&episode={episode}"
+            vidsrc_to_url = f"https://vidsrc.to/embed/tv/{tmdb_id}/{season}/{episode}"
+            multi_url = f"https://multiembed.mov/?video_id={tmdb_id}&tmdb=1&s={season}&e={episode}"
+        else:
+            videasy_url = f"https://player.videasy.to/movie/{tmdb_id}"
+            vidsrc_url = f"https://vidsrc.me/embed/movie?tmdb={tmdb_id}"
+            vidsrc_to_url = f"https://vidsrc.to/embed/movie/{tmdb_id}"
+            multi_url = f"https://multiembed.mov/?video_id={tmdb_id}&tmdb=1"
+
+        all_sources = [
+            {'quality': 'Videasy Server 1', 'url': videasy_url, 'is_embed': True},
+            {'quality': 'VidSrc Server 2', 'url': vidsrc_url, 'is_embed': True},
+            {'quality': 'VidSrc Pro 3', 'url': vidsrc_to_url, 'is_embed': True},
+            {'quality': 'MultiEmbed 4', 'url': multi_url, 'is_embed': True}
+        ]
 
     res_data = {
         'success': True,
