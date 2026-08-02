@@ -131,14 +131,7 @@ CACHE_TTL_SECONDS = 60
 # INSTANT PARALLEL STREAM RESOLVER WITH MEMORY CACHING
 # -------------------------------------------------------------
 def resolve_streams(tmdb_id, media_type="movie", season="1", episode="1"):
-    cache_key = f"{media_type}_{tmdb_id}_{season}_{episode}"
-    now = time.time()
-    
-    if cache_key in RESOLVE_CACHE:
-        ts, cached_data = RESOLVE_CACHE[cache_key]
-        if now - ts < CACHE_TTL_SECONDS:
-            return cached_data
-
+    # Always fetch fresh live CDN tokens to avoid token expiry
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Origin': 'https://player.videasy.to',
